@@ -1,4 +1,7 @@
 import numpy as np
+
+
+
 class DecimalCircuit:
 
     def __init__(self):
@@ -236,6 +239,25 @@ class GC:
                 encrypted_gates.append(self.mult_garbled(self.circuit[i, 0:4], all_keys))
 
         return encrypted_gates,all_keys
+    def forced_keys_circuit_garbling(self,forced_keys,numbers):
+        max_ = self.circuit.max()
+        min_ = self.zerowirecounter
+        no_wires = max_ - min_
+        all_keys = []
+        for i in range (no_wires):
+            keys = np.random.randint(0,2,(10,self.security))
+            perm = np.random.permutation(10).reshape((10,1))
+            keys = np.hstack((keys,perm)).astype(np.int32)
+            all_keys.append(keys)
+        encrypted_gates=[]
+        all_keys[0:numbers] = forced_keys
+        for i in range (self.circuit.shape[0]):
+            if self.circuit[i,4] == 0:
+                encrypted_gates.append(self.add_garbled(self.circuit[i,0:4],all_keys))
+            else:
+                encrypted_gates.append(self.mult_garbled(self.circuit[i, 0:4], all_keys))
+
+        return encrypted_gates,all_keys
     def degarbling(self,encrypted_table,given_keys):
         for i in range(self.circuit.shape[0]):
             key1 = given_keys[self.circuit[i,0]]
@@ -294,6 +316,104 @@ class TemplateSecurity:
             elements.append(digits.astype(np.int64))
         return elements
 
+    def parallel_euc_distance(self):
+        gc = GC()
+        prec = self.precision
+        all_wires = 2 * self.precision * self.dimension + 2 * self.precision * 4
+        no_wires_for_mult =  2 * self.precision * self.dimension
+        gc.wire_counter = 2*self.precision
+        A = np.array([np.random.randint(0,9,(prec)),np.arange(prec)])
+        B = np.array([np.random.randint(0,9,(prec)),np.arange(prec)+prec])
+        self.wire_counter = no_wires_for_mult
+        threshold = self.preprocessing(np.array([self.threshold]), 2*self.precision)[0]
+        self.wire_counter = no_wires_for_mult+2*self.precision
+        square_sum_template =self.preprocessing(np.array([self.square_sum]), 2*self.precision)[0]
+        self.wire_counter = no_wires_for_mult + 4 * self.precision
+        square_sum_query =self.preprocessing(np.array([2]), 2*self.precision)[0]
+        self.wire_counter = no_wires_for_mult + 6 * self.precision
+        constant_negative_2 = self.preprocessing(np.array([10**20-2]),2*self.precision)[0]
+
+
+        m = gc.multiplication_circuit(wire(A),wire(B),prec,2*prec)
+        list_of_gc = self.dimension * [gc]
+        gc_euc = GC()
+
+        gc_euc.wire_counter = all_wires
+        mult_result = np.zeros([2,2*prec*self.dimension])
+        mult_result[1,:] = np.arange(2*self.dimension*prec)
+        current = wire(mult_result[:,0:2*prec])
+        for i in range(1,self.dimension):
+            current = gc_euc.addition_circuit(current,wire(mult_result[:,i*2*prec:i*2*prec+2*prec ] ), 2*self.precision)
+        current = gc_euc.multiplication_circuit(wire(constant_negative_2),current,2*self.precision,2*self.precision)
+        current = gc_euc.addition_circuit(current,wire(square_sum_query),2*self.precision)
+        current = gc_euc.addition_circuit(current, wire(square_sum_template), 2*self.precision)
+        current = gc_euc.addition_circuit(current,wire(threshold),2*self.precision)
+        return current, list_of_gc,gc_euc,m,threshold,square_sum_template,square_sum_query,constant_negative_2
+
+    def parallel_euc_setup(self):
+
+        """
+        first run self.paralle.euc
+        then we garble all the mult_circuits
+        then we create parallel_garbling function and after random generation of all keys
+        we replace wire 0-20 with keys corresponding to the output of gc for mult 1
+        ...
+        and
+        :return:
+
+        """
+        current, list_of_gc,gc_euc,m,threshold,square_sum_template,square_sum_query,constant_negative_2 = self.parallel_euc_distance()
+        et_list = []
+        keys_list = []
+        keys_list_mult = []
+        counter = 1
+        for garbled_circuit in list_of_gc:
+            print(counter)
+            counter = counter + 1
+            et, keys = garbled_circuit.circuit_garbling()
+            et_list.append(et)
+            keys_list_mult.append(keys)
+            for i in range (m.matrix.shape[1]):
+                keys_list.append(keys[m.matrix[1,i]])
+        et_euc,keys_euc = gc_euc.forced_keys_circuit_garbling(keys_list,2*self.precision*self.dimension)
+        max_ = gc_euc.circuit.max()
+        min_ = gc_euc.zerowirecounter
+        no_wires = max_ - min_
+        wires_euc = np.zeros((no_wires, gc_euc.security + 1), dtype=np.int32)
+        for i in range(1, abs(min_)):
+            wires_euc[-i] = keys_euc[-i][0]
+        max_ = garbled_circuit.circuit.max()
+        min_ = garbled_circuit.zerowirecounter
+        mult_no_wire= max_ - min_
+
+        wires_mult = np.zeros((self.dimension,mult_no_wire,list_of_gc[0].security+1),dtype=np.int32)
+        for j in range (self.dimension):
+
+            for i in range(1, abs(min_)):
+                wires_mult[j,-i] = keys_list_mult[j][-i][0]
+        for k in range(self.dimension):
+            self.wire_counter = 0
+            input_ = self.preprocessing(np.array([self.template[k]]),self.precision)[0]
+            for i in range (self.precision):
+                wires_mult[k,i,:] = keys_list_mult[k][i][input_[0,i]]
+        for i in range (2*self.precision):
+            wires_euc[threshold[1,i]] = keys_euc[threshold[1,i]][threshold[0,i]]
+            wires_euc[square_sum_template[1, i]] = keys_euc[square_sum_template[1, i]][square_sum_template[0, i]]
+            wires_euc[constant_negative_2[1, i]] = keys_euc[constant_negative_2[1, i]][constant_negative_2[0, i]]
+        return wires_mult,wires_euc,et_list,et_euc,gc_euc,list_of_gc, keys_euc,keys_list_mult,square_sum_query,current,m
+
+    def parallel_prepare_query(self, query,square_sum,wires_euc,wires_mult,available_keys_euc,available_keys_mult):
+        self.wire_counter = self.precision
+        value_square = np.sum(query * query)
+        square_sum_query = self.preprocessing(np.array([value_square]), 2 * self.precision)[0]
+        for i in range(2 * self.precision):
+            wires_euc[square_sum[1, i]] = available_keys_euc[i][square_sum_query[0, i]]
+        for k in range(self.dimension):
+            self.wire_counter = self.precision
+            input_ = self.preprocessing(np.array([query[k]]),self.precision)[0]
+            for i in range (self.precision):
+                wires_mult[k,self.precision+i,:] = available_keys_mult[k,i,input_[0,i]]
+        return wires_euc,wires_mult
 
     def euclidean_distance(self):
         gc_euc = GC()
@@ -358,58 +478,112 @@ class TemplateSecurity:
 
         return wires,A
 
+
+def group_degarbling_( encrypted_table, given_keys,circuit,security):
+    batch_size = given_keys.shape[0]
+    for i in range( circuit.shape[0]):
+        key1 = given_keys[:, circuit[i, 0]]
+        key2 = given_keys[:,  circuit[i, 1]]
+        row = 10 * key1[:,  security] + key2[:,  security]
+        n_rows1 = np.diag((encrypted_table[:,i,row, 0,  security] ) + key1[:,  security] + key2[:,  security]) % 10
+        n_rows2 = np.diag((encrypted_table[:,i ,row, 1,  security]) + key1[:,  security] + key2[:,  security]) % 10
+        k_out1 = ((encrypted_table[:,i,row, 0, 0: security][np.arange(batch_size),np.arange(batch_size)] + key1[:, 0: security] + key2[:,
+                                                                                            0: security]) % 2)
+        k_out2 = ((encrypted_table[:,i,row, 1, 0: security][np.arange(batch_size),np.arange(batch_size)] + key1[:, 0: security] + key2[:,
+                                                                                            0: security]) % 2)
+        k_out1 = np.hstack((k_out1, n_rows1.reshape((batch_size, 1))))
+        k_out2 = np.hstack((k_out2, n_rows2.reshape((batch_size, 1))))
+        given_keys[:,  circuit[i, 2]] = k_out1
+        given_keys[:,  circuit[i, 3]] = k_out2
+    return given_keys
+
+def degarbling_(encrypted_table, given_keys,circuit,security):
+    for i in range( circuit.shape[0]):
+        key1 = given_keys[ circuit[i, 0]]
+        key2 = given_keys[ circuit[i, 1]]
+        row = int(10 * key1[ security] + key2[ security])
+        n_rows1 = (encrypted_table[i][row, 0,  security] + key1[ security] + key2[ security]) % 10
+        n_rows2 = (encrypted_table[i][row, 1,  security] + key1[ security] + key2[ security]) % 10
+        k_out1 = ((encrypted_table[i][row, 0, 0: security] + key1[0: security] + key2[0: security]) % 2)
+        k_out2 = ((encrypted_table[i][row, 1, 0: security] + key1[0: security] + key2[0: security]) % 2)
+        k_out1 = np.append(k_out1, n_rows1)
+        k_out2 = np.append(k_out2, n_rows2)
+        given_keys[ circuit[i, 2]] = k_out1
+        given_keys[ circuit[i, 3]] = k_out2
+    return given_keys
 import time
-# prec = 10
-# no = 4000
-# A = np.array([[2,0,0,0,0,0,0,0,0,0],[0,1,2,3,4,5,6,7,8,9]])
-# #B = np.array([np.random.randint(0,9,(prec)),np.arange(prec)+prec])
-# B = np.array([[1,1,0,0,0,0,0,0,0,0],np.arange(10)+10])
-#
-# C = np.array([[8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],np.arange(20)])
-# #
-# #C = np.array([[0,0,1,1,0],[10,11,12,13,14]])
-# a = wire(A)
-# b = wire(B)
-# #c = wire(C)
-# #c= wire(C)
-# gc = GC()
-# gc.wire_counter = 40
-# #m = gc.addition_circuit(a,b,prec)
-# m = gc.multiplication_circuit(a,b,prec,2*prec)
-# #m1 = gc.multiplication_circuit(m,c,2*prec,2*prec)
-# # m2= gc.addition_circuit(m1,c,2*prec)
-# et,keys = gc.circuit_garbling()
-#
-# max_ = gc.circuit.max()
-# min_ = gc.zerowirecounter
-# no_wires = max_ - min_
-# wires=np.zeros((no_wires,gc.security+1),dtype=np.int32)
-# for i in range(prec):
-#     wires[i] = keys[i][A[0,i]]
-# for i in range(prec,2*prec):
-#     wires[i] = keys[i][B[0,i-prec]]
-# for i in range(1,abs(min_)):
-#     wires[-i] = keys[-i][0]
-# gwires = np.expand_dims(wires, axis=0)
-# gwires = np.tile(gwires,(no,1,1))
-# # t= time.time()
-# wi= gc.degarbling(et,wires)
-# # print( no*(time.time()-t))
-#
-# t = time.time()
-# wi = gc.group_degarbling(et,gwires)
-# print(time.time()-t)
-A = np.array([0,23,24])
-dimension = 3
-precision = 10
-ts = TemplateSecurity(A,precision,4)
-wires,et,keys,A,square_sum_query,current,gc_euc =  ts.euclidean_distance_setup()
-keys1 = keys[0:dimension*precision]+keys[square_sum_query[1,0]:square_sum_query[1,0]+2*precision]
-query = np.array([0,25,23])
+prec = 10
+no = 50
+A = np.array([[2,0,0,0,0,0,0,0,0,0],[0,1,2,3,4,5,6,7,8,9]])
+#B = np.array([np.random.randint(0,9,(prec)),np.arange(prec)+prec])
+B = np.array([[1,1,0,0,0,0,0,0,0,0],np.arange(10)+10])
 
+C = np.array([[8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],np.arange(20)])
+#
+#C = np.array([[0,0,1,1,0],[10,11,12,13,14]])
+a = wire(A)
+b = wire(B)
+#c = wire(C)
+#c= wire(C)
+gc = GC()
+gc.wire_counter = 40
+#m = gc.addition_circuit(a,b,prec)
+m = gc.multiplication_circuit(a,b,prec,2*prec)
+#m1 = gc.multiplication_circuit(m,c,2*prec,2*prec)
+# m2= gc.addition_circuit(m1,c,2*prec)
+et,keys = gc.circuit_garbling()
 
-wires,B = ts.prepare_query(query,square_sum_query,wires,keys1)
+max_ = gc.circuit.max()
+min_ = gc.zerowirecounter
+no_wires = max_ - min_
+wires=np.zeros((no_wires,gc.security+1),dtype=np.int32)
+for i in range(prec):
+    wires[i] = keys[i][A[0,i]]
+for i in range(prec,2*prec):
+    wires[i] = keys[i][B[0,i-prec]]
+for i in range(1,abs(min_)):
+    wires[-i] = keys[-i][0]
+gwires = np.expand_dims(wires, axis=0)
+gwires = np.tile(gwires,(no,1,1))
+# t= time.time()
+wi= gc.degarbling(et,wires)
+# print( no*(time.time()-t))
 
-t= time.time()
-wi= gc_euc.degarbling(et,wires)
+t = time.time()
+wi = gc.group_degarbling(et,gwires)
 print(time.time()-t)
+""""
+PARALLEL
+"""
+# A = np.array([0,23,24,24])
+# A = np.ones((50))
+# dimension = 50
+# precision = 10
+# security = 100
+# ts = TemplateSecurity(A,precision,4)
+# wires_mult,wires_euc,et_list,et_euc,gc_euc,list_of_gc, keys_euc,keys_list_mult,square_sum_query,current,m = ts.parallel_euc_setup()
+# available_keys_euc = keys_euc[square_sum_query[1,0]:square_sum_query[1,0]+2*precision]
+# mult_keys_np = np.array(keys_list_mult)
+# available_keys_mult = mult_keys_np[:,precision:2*precision,:]
+# query = np.array([0,25,23,4])
+# query = np.zeros((50))
+# wires_euc,wires_mult = ts.parallel_prepare_query(query,square_sum_query,wires_euc,wires_mult,available_keys_euc,available_keys_mult)
+# t = time.time()
+# wi = group_degarbling_(np.array(et_list),wires_mult,list_of_gc[0].circuit,list_of_gc[0].security)
+# print(time.time()-t)
+# wires_euc[0:2*precision*dimension,:] = wi[:,m.matrix[1,:]].reshape((2*precision*dimension,security+1))
+# wires = degarbling_(et_euc,wires_euc,gc_euc.circuit,security)
+
+"""
+end of parallel
+"""
+# wires,et,keys,A,square_sum_query,current,gc_euc =  ts.euclidean_distance_setup()
+# keys1 = keys[0:dimension*precision]+keys[square_sum_query[1,0]:square_sum_query[1,0]+2*precision]
+# query = np.array([0,25,23])
+#
+#
+# wires,B = ts.prepare_query(query,square_sum_query,wires,keys1)
+#
+# t= time.time()
+# wi= gc_euc.degarbling(et,wires)
+# print(time.time()-t)
