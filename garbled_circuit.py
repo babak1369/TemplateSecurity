@@ -302,7 +302,7 @@ class TemplateSecurity:
         B = self.preprocessing(self.template)
         threshold = self.preprocessing(np.array([self.threshold]), 2*self.precision)[0]
         square_sum_template =self.preprocessing(np.array([self.square_sum]), 2*self.precision)[0]
-        square_sum_query =self.preprocessing(np.array([1]), 2*self.precision)[0]
+        square_sum_query =self.preprocessing(np.array([2]), 2*self.precision)[0]
         constant_negative_2 = self.preprocessing(np.array([10**20-2]),2*self.precision)[0]
         wires_list_a=[]
         wires_list_b=[]
@@ -339,7 +339,7 @@ class TemplateSecurity:
             wires[square_sum_template[1, i]] = keys[square_sum_template[1, i]][square_sum_template[0, i]]
             wires[constant_negative_2[1, i]] = keys[constant_negative_2[1, i]][constant_negative_2[0, i]]
 
-        return wires,et,keys,A,square_sum_query,current,gc_euc
+        return wires,et,keys,B,square_sum_query,current,gc_euc
     def prepare_query(self,query,square_sum,wires,keys):
         """"
         keys are precision * d for input
@@ -348,15 +348,15 @@ class TemplateSecurity:
         self.wire_counter = 0
         value_square = np.sum(query * query)
         A = self.preprocessing(query,self.precision)
-        square_sum_template = self.preprocessing(np.array([value_square]), 2 * self.precision)[0]
+        square_sum_query = self.preprocessing(np.array([value_square]), 2 * self.precision)[0]
         for i in range(len(A)):
             for j in range(self.precision):
-                
                 wires[A[i][1, j]] = keys[A[i][1, j]][A[i][0, j]]
         for i in range (2*self.precision):
-            wires[square_sum[1,i]] = keys[square_sum_template[1,i]][square_sum_template[0,i]]
+            #TODO: KEY size is 50.. needs generalization
+            wires[square_sum[1,i]] = keys[i+len(A)*self.precision][square_sum_query[0,i]]
 
-        return wires
+        return wires,A
 
 import time
 # prec = 10
@@ -366,17 +366,17 @@ import time
 # B = np.array([[1,1,0,0,0,0,0,0,0,0],np.arange(10)+10])
 #
 # C = np.array([[8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],np.arange(20)])
-#
+# #
 # #C = np.array([[0,0,1,1,0],[10,11,12,13,14]])
 # a = wire(A)
 # b = wire(B)
-# c = wire(C)
+# #c = wire(C)
 # #c= wire(C)
 # gc = GC()
 # gc.wire_counter = 40
 # #m = gc.addition_circuit(a,b,prec)
 # m = gc.multiplication_circuit(a,b,prec,2*prec)
-# m1 = gc.multiplication_circuit(m,c,2*prec,2*prec)
+# #m1 = gc.multiplication_circuit(m,c,2*prec,2*prec)
 # # m2= gc.addition_circuit(m1,c,2*prec)
 # et,keys = gc.circuit_garbling()
 #
@@ -399,15 +399,16 @@ import time
 # t = time.time()
 # wi = gc.group_degarbling(et,gwires)
 # print(time.time()-t)
-A = np.array([0,23,2,3,4,5,6,6,7,1,2,3])
-
-ts = TemplateSecurity(A,10,4)
+A = np.array([0,23,24])
+dimension = 3
+precision = 10
+ts = TemplateSecurity(A,precision,4)
 wires,et,keys,A,square_sum_query,current,gc_euc =  ts.euclidean_distance_setup()
-keys1 = keys[0:120]+keys[square_sum_query[1,0]:square_sum_query[1,0]+20]
-query = np.array([0,25,4,5,2,3,33,32,12,5,5,0])
+keys1 = keys[0:dimension*precision]+keys[square_sum_query[1,0]:square_sum_query[1,0]+2*precision]
+query = np.array([0,25,23])
 
 
-wires = ts.prepare_query(query,square_sum_query,wires,keys1)
+wires,B = ts.prepare_query(query,square_sum_query,wires,keys1)
 
 t= time.time()
 wi= gc_euc.degarbling(et,wires)
