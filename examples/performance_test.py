@@ -1,7 +1,6 @@
 import numpy as np
-from TemplateSecurity.garbledcircuit.utils import wire
-from TemplateSecurity.garbledcircuit.garbled_circuit import GC
 import time
+import garbledcircuit
 """
  2000 multiplications degarbling performance 
 """
@@ -14,11 +13,11 @@ B = np.array([[1,1,0,0,0,0,0,0,0,0],np.arange(10)+10])
 C = np.array([[8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],np.arange(20)])
 #
 #C = np.array([[0,0,1,1,0],[10,11,12,13,14]])
-a = wire(A)
-b = wire(B)
+a = garbledcircuit.wire(A)
+b = garbledcircuit.wire(B)
 #c = wire(C)
 #c= wire(C)
-gc = GC()
+gc = garbledcircuit.GC()
 gc.wire_counter = 40
 #m = gc.addition_circuit(a,b,prec)
 m = gc.multiplication_circuit(a,b,prec,2*prec)

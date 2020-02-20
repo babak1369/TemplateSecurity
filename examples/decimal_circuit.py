@@ -1,6 +1,6 @@
-from TemplateSecurity.garbledcircuit.decimal_circuit import DecimalCircuit
+import garbledcircuit as gc
 import numpy as np
-dc = DecimalCircuit()
+dc = gc.DecimalCircuit()
 """
 This Example shows how the addition and multiplication decimal circuit work.
 
