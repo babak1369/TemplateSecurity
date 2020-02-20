@@ -17,7 +17,7 @@ wires_mult,wires_euc,et_list,et_euc,gc_euc,list_of_gc, keys_euc,keys_list_mult,s
 available_keys_euc = keys_euc[square_sum_query[1,0]:square_sum_query[1,0]+2*precision]
 mult_keys_np = np.array(keys_list_mult)
 available_keys_mult = mult_keys_np[:,precision:2*precision,:]
-query = np.array([0,25,23,4])
+query = np.array([0,25,23,1114])
 wires_euc,wires_mult = ts.parallel_prepare_query(query,square_sum_query,wires_euc,wires_mult,available_keys_euc,available_keys_mult)
 t = time.time()
 wi = gc.group_degarbling_(np.array(et_list),wires_mult,list_of_gc[0].circuit,list_of_gc[0].security)
